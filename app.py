@@ -1,8 +1,17 @@
 import streamlit as st
+from services.auth.login import login_form
 
-st.set_page_config(page_title="AI Gym Coach",page_icon="💪")
+def app():
+    st.set_page_config(page_title="AI Gym Coach",page_icon="💪")
+    
+    if not login_form():
+        return
+    
+    st.title("Hello")
+    
 
-st.title("💪 AI Gym Coach")
-st.markdown("A comprehensive AI-powered fitness platform")
+
+if __name__=="__main__":
+    app()
 
 
