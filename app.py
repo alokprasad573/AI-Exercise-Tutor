@@ -1,7 +1,13 @@
 import streamlit as st
+import os
+import time
+import pandas as pd
+from streamlit_webrtc import webrtc_streamer, WebRtcMode
 from services.auth.login import login_form
 from services.state.session_defaults import initial_session_defaults
 from services.config.workout_config import EXERCISE_OPTIONS
+from services.ui.style_loader import load_css, inject_local_font, inject_webrtc_styles
+from services.persistence.exercise_repository import init_db, add_exercise, get_users_exercises
 
 def app():
     st.set_page_config(
@@ -11,6 +17,10 @@ def app():
         layout="centered"
     )
 
+    load_css(os.path.join(os.getcwd(), "static", "style.css"))
+    inject_local_font(os.path.join(os.getcwd(), "static", "AdobeClean.otf"), "AdobeClean")
+
+    init_db()
     if not login_form():
         return 
     
@@ -41,6 +51,7 @@ def app():
 
             if start_workout_button:
                 st.session_state["workout_started"] = True
+                st.session_state["workout_started_at"] = time.time()
                 st.rerun()
         else:
             exercise = st.session_state.get("plan_exercise")
@@ -56,7 +67,26 @@ def app():
             end_workout_button = st.button("End Workout", key="end_session_button", use_container_width=True)
 
             if end_workout_button:
+                # Calculate duration
+                duration = 0
+                if "workout_started_at" in st.session_state:
+                    duration = int(time.time() - st.session_state["workout_started_at"])
+                
+                # Persist to SQL database
+                if st.session_state.get("user_id"):
+                    add_exercise(
+                        user_id=st.session_state["user_id"],
+                        exercise_name=st.session_state.get("plan_exercise"),
+                        reps=st.session_state.get("reps", 0),
+                        sets=st.session_state.get("sets_completed", 0),
+                        time=duration
+                    )
+                
+                # Reset workout progress metrics
                 st.session_state["workout_started"] = False
+                st.session_state["reps"] = 0
+                st.session_state["sets_completed"] = 0
+                st.session_state["current_set_reps"] = 0
                 st.rerun()
 
         if workout_started:
@@ -107,6 +137,66 @@ def app():
                 st.metric("Torso Angle", f"{st.session_state.torso_angle}°")
                 st.metric("Balance Status", st.session_state.balance_status)
     
+    st.title("AI Real-time GYM Coach")
+    st.markdown("#### Real-time pose detection with proactive AI voice coaching")
+
+    if not workout_started:
+        st.markdown(
+        """
+        <div style="
+            border: 10px dashed #444;
+            border-radius: 0px;
+            padding: 48px 32px;
+            text-align: center;
+            color: #888;
+            margin-top: 32px;
+        ">
+            <h2 style="color:#ccc; margin-bottom:8px;">👈 Set your workout plan</h2>
+            <p style="font-size:1.05rem;">
+                Choose your exercise, sets and reps in the sidebar,<br>
+                then click <strong>Start Workout</strong> to activate the camera and AI coach.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    else:
+        context = webrtc_streamer(
+            key="exercise-analysis",
+            mode=WebRtcMode.SENDRECV,
+            video_processor_factory=None,
+            rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        media_stream_constraints={
+            "video": True,
+            "audio": False
+        },
+        async_processing=True
+    )
+        
+    st.markdown("### Workout History")
+    if st.session_state.get("user_id"):
+        history = get_users_exercises(st.session_state["user_id"])
+        if history:
+            history_data = []
+            for row in history:
+                dur_sec = row["time"]
+                dur_str = f"{dur_sec // 60:02d}:{dur_sec % 60:02d}" if dur_sec > 0 else "00:00"
+                history_data.append({
+                    "Date & Time": row["created_at"],
+                    "Exercise": row["exercise_name"],
+                    "Sets Completed": row["sets"],
+                    "Total Reps": row["reps"],
+                    "Duration": dur_str
+                })
+            df = pd.DataFrame(history_data)
+            df = df.sort_values(by="Date & Time", ascending=False)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No workout history found yet. Complete a workout session to see your progress here!")
+    else:
+        st.warning("Please log in to view your workout history.")
+
+    inject_webrtc_styles()
 
 
 if __name__=="__main__":
