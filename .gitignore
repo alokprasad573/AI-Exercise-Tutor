@@ -39,3 +39,5 @@ env/
 *.swp
 *.swo
 
+# cachefile
+data.db
