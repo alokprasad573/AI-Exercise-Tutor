@@ -1,20 +1,28 @@
+# pyrefly: ignore [missing-import]
 import streamlit as st
 import os
 import time
+import pandas as pd
+from dotenv import load_dotenv
 from services.auth.login import login_form
 from services.state.session_defaults import initial_session_defaults
 from services.config.workout_config import EXERCISE_OPTIONS
 from services.ui.style_loader import load_css, inject_local_font, inject_webrtc_styles
-from services.persistence.exercise_repository import init_db
+from services.persistence.exercise_repository import init_db, get_users_exercises
 from streamlit_webrtc import webrtc_streamer, WebRtcMode
 from services.vision.exercise_video_processor import VideoProcessorClass
 from services.tracking.metrics import sync_metrics_update
+from groq import Groq
+from services.coaching.llm import LLMCoach
+from services.coaching.tts import TextToSpeech
+from services.coaching.voice_pipeline import VoicePipeline, autoplay_audio
 
-  
+load_dotenv()
+
 def main():
     st.set_page_config(
         page_icon="🏋️‍♀️",
-        page_title="AI Real-time GYM Coach",
+        page_title="GymGenie | AI Exercise Tutor",
         initial_sidebar_state="expanded",
         layout="centered"
     )
@@ -28,11 +36,25 @@ def main():
         return 
 
     initial_session_defaults()
+    
+    if "voice_pipeline" not in st.session_state:
+        try:
+            api_key = os.environ.get("GROQ_API_KEY", "")
+
+            if not api_key and hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+                api_key = st.secrets["GROQ_API_KEY"]
+            
+            groq_client = Groq(api_key=api_key)
+            llm_coach = LLMCoach(groq_client)
+            tts = TextToSpeech()
+            st.session_state.voice_pipeline = VoicePipeline(llm_coach, tts)
+        except Exception as e:
+            st.session_state.voice_pipeline = None
 
     workout_started = st.session_state.get("workout_started", False)
     
     with st.sidebar:
-        st.title("🏋️‍♂️ Apna AI Coach")
+        st.title("🏋️ GymGenie")
 
         if st.session_state.username:
             st.caption(f"👤 Login as {st.session_state.username}")
@@ -60,6 +82,16 @@ def main():
                 st.session_state.workout_started = True
                 st.session_state.set_cycle_started_at = time.time()
                 st.session_state.last_saved_sets_completed = 0
+                
+                if st.session_state.voice_pipeline:
+                    result = st.session_state.voice_pipeline.process_event(
+                        event="workout_started",
+                        exercise=plan_exercise,
+                        metrics={}
+                    )
+                    
+                    if result:
+                        st.session_state.audio_to_play, st.session_state.coach_feedback = result
                 st.session_state.last_notified_sets_completed = 0
                 st.session_state.last_notified_workout_complete = False
                 st.rerun()
@@ -74,6 +106,14 @@ def main():
 
             if end_session_button:
                 st.session_state.workout_started = False
+                if st.session_state.voice_pipeline:
+                    result = st.session_state.voice_pipeline.process_event(
+                        event="workout_completed",
+                        exercise=exercise,
+                        metrics={}
+                    )
+                    if result:
+                        st.session_state.audio_to_play, st.session_state.coach_feedback = result
                 st.rerun()
 
         if workout_started:
@@ -124,9 +164,16 @@ def main():
                 st.metric("Torso Angle", f"{st.session_state.torso_angle}°")
                 st.metric("Balance Status", st.session_state.balance_status)
 
-    st.title("AI Real-time GYM Coach")
+    st.title("AI based Exercise Tutor")
     st.markdown("#### Real-time pose detection with proactive AI voice coaching")
 
+    if st.session_state.get("audio_to_play"):
+        autoplay_audio(st.session_state.audio_to_play)
+
+    if st.session_state.get("coach_feedback"):
+        st.markdown("")
+        st.success(f"🤖 **Coach:** {st.session_state.coach_feedback}")
+        
     if not workout_started:
         st.markdown(
             """
@@ -168,8 +215,41 @@ def main():
 
         inject_webrtc_styles()
 
+    st.divider()
     st.markdown("#### Workout History")
+    user_id = st.session_state.get("user_id", 0)
 
+    if isinstance(user_id, int):
+        history_rows = get_users_exercises(user_id)
+
+        df_arr = [
+            {
+                "Exercise": row["exercise_name"],
+                "Reps": row["reps"],
+                "Sets": row["sets"],
+                "Time (sec)": row["time"],
+                "Date": row["created_at"]
+            }
+            for row in history_rows
+        ]
+
+        df = pd.DataFrame(df_arr)
+
+        if not df.empty:
+            df["Date"] = pd.to_datetime(df["Date"]).dt.date
+            agg_df = df.groupby(["Exercise", "Date"]).agg(
+                {
+                    'Reps': 'sum',
+                    "Sets": 'sum',
+                    "Time (sec)": 'sum'
+                }
+            ).reset_index()
+            agg_df.index += 1
+            st.table(agg_df, border="horizontal")
+        else:
+            st.info("No workout history found.")
+    
+    
 
 if __name__ == "__main__":
     main()

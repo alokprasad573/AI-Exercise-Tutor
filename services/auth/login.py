@@ -7,7 +7,7 @@ def login_form():
         return True
     
     st.title("GymGenie")
-    st.subheader("Personal AI based Realtime Gym Coach")
+    st.subheader("Personal AI based Exercise Tutor")
 
     
     with st.form("login_form"):

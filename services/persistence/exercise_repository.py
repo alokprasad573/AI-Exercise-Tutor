@@ -39,6 +39,11 @@ def init_db() -> None:
             )
             """
         )
+        # Handle migration if db has 'duration' column instead of 'time'
+        cursor = conn.execute("PRAGMA table_info(exercises)")
+        columns = [row["name"] for row in cursor.fetchall()]
+        if "duration" in columns and "time" not in columns:
+            conn.execute("ALTER TABLE exercises RENAME COLUMN duration TO time")
         
 def get_user(username: str) -> sqlite3.Row:
     conn = get_connection()
