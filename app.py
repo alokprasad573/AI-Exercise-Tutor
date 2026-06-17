@@ -8,7 +8,7 @@ from services.state.session_defaults import initial_session_defaults
 from services.config.workout_config import EXERCISE_OPTIONS
 from services.ui.style_loader import load_css, inject_local_font, inject_webrtc_styles
 from services.persistence.exercise_repository import init_db, add_exercise, get_users_exercises
-
+from services.vision.exercise_video_processor import VideoProcessorClass
 def app():
     st.set_page_config(
         page_icon="🏋️‍♀️",
@@ -164,7 +164,7 @@ def app():
         context = webrtc_streamer(
             key="exercise-analysis",
             mode=WebRtcMode.SENDRECV,
-            video_processor_factory=None,
+            video_processor_factory=VideoProcessorClass,
             rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
         media_stream_constraints={
             "video": True,
