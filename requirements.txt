@@ -1,8 +1,23 @@
-streamlit==1.54.0
-streamlit-webrtc==0.64.5
-mediapipe==0.10.14
-opencv-python-headless==4.10.0.84
-pandas==2.2.3
+# Core UI
+streamlit>=1.58.0
+streamlit-webrtc>=0.72.2
+
+# Computer Vision & Pose Detection
+mediapipe>=0.10.14
+opencv-python-headless>=4.10.0.84
+
+# Video frame processing (used by streamlit-webrtc processor)
+av>=16.1.0
+
+# Data
+numpy>=2.5.0
+pandas>=3.0.3
+
+# AI / LLM
 groq>=0.12.0
-gtts==2.5.3
-python-dotenv==1.2.2
+
+# Text-to-Speech
+gtts>=2.5.3
+
+# Environment & Config
+python-dotenv>=1.2.2
